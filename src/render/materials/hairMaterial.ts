@@ -14,7 +14,9 @@ import { toToonMaterial } from '../toon.ts';
  * Hårmaterial för man och svans: MeshToonMaterial med inskjuten kod, så att
  * skinning, ljus, skuggor och dimma fungerar som vanligt.
  *
- * UV-kontrakt: V = 0 vid roten och 1 vid spetsen, U längs remsan.
+ * UV-kontrakt: V = 0 vid roten och 1 vid spetsen, U längs remsan – räknat som
+ * i Blender. glTF vänder V (v_gltf = 1 - v_blender), så i filen och i
+ * `uv`-attributet ligger roten på V = 1. Vertexshadern vänder tillbaka.
  */
 
 export interface HairOptions {
@@ -79,12 +81,12 @@ uniform vec3 uSideDir;
 varying vec2 vHairUv;
 `;
 
-// Körs efter skinning: \`transformed\` är i meshens lokala rum, liksom uBackDir/uSideDir.
+// Körs efter skinning: `transformed` är i meshens lokala rum, liksom uBackDir/uSideDir.
 const VERTEX_MAIN = /* glsl */ `
-vHairUv = uv;
+vHairUv = vec2(uv.x, 1.0 - uv.y); // glTF-V -> kontraktets V (0 = rot)
 {
-  float w = uv.y * uv.y;
-  float phase = uTime * uSwayFreq - uv.y * 2.5 + uv.x * 3.0;
+  float w = vHairUv.y * vHairUv.y;
+  float phase = uTime * uSwayFreq - vHairUv.y * 2.5 + vHairUv.x * 3.0;
   float drag = min(uSpeed * uDragPerSpeed, uDragMax);
   vec3 hairOffset = uSideDir * (sin(phase) * uSwayAmp)
     + uBackDir * (drag + sin(phase * 1.7) * uSwayAmp * 0.5);

@@ -221,7 +221,7 @@ type Dir = readonly [number, number, number];
 
 /**
  * Hårremsa enligt UV-kontraktet: roten centrerad längs `along` (U = 0..1),
- * stråna går i riktning `tip` (V = 0 vid roten, 1 vid spetsen).
+ * stråna går i riktning `tip` (V = 0 vid roten, 1 vid spetsen, som i Blender).
  */
 function hairStrip(width: number, length: number, along: Dir, tip: Dir): PlaneGeometry {
   const g = new PlaneGeometry(width, length, 6, 6);
@@ -232,7 +232,8 @@ function hairStrip(width: number, length: number, along: Dir, tip: Dir): PlaneGe
     const v = 0.5 - pos.getY(i) / length; // plattans överkant blir roten
     const d = v * length;
     pos.setXYZ(i, along[0] * u + tip[0] * d, along[1] * u + tip[1] * d, along[2] * u + tip[2] * d);
-    uv.setXY(i, u / width + 0.5, v);
+    // Lagras som glTF gör (V vänt), så att remsan beter sig som den riktiga modellen.
+    uv.setXY(i, u / width + 0.5, 1 - v);
   }
   g.computeVertexNormals();
   return g;
