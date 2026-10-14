@@ -12,6 +12,7 @@ import {
   PlaneGeometry,
 } from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { HairBinding, MANE_OPTIONS, TAIL_OPTIONS, createHairMaterial } from './materials/hairMaterial.ts';
 import { toToonMaterial } from './toon.ts';
 
 export const GALLOP_CLIP = 'Gallop';
@@ -40,23 +41,46 @@ export async function loadZebra(url: string): Promise<Zebra> {
   }
 }
 
-function createHolder(model: Object3D): Group {
+/**
+ * Lägger modellen i en hållare som placeras på banan. `animate` driver
+ * skelett/lådor; håret uppdateras efteråt med zebrans fart.
+ */
+function makeZebra(
+  model: Object3D,
+  speed: number,
+  isPlaceholder: boolean,
+  hair: HairBinding[],
+  animate: (dt: number) => void,
+): Zebra {
   const holder = new Group();
   holder.name = 'ZebraHolder';
   // Gir först, sedan lutning runt zebrans egen framåtaxel.
   holder.rotation.order = 'YXZ';
   holder.add(model);
-  return holder;
+
+  let time = 0;
+  return {
+    object: holder,
+    speed,
+    isPlaceholder,
+    update(dt) {
+      animate(dt);
+      time += dt;
+      if (hair.length === 0) return;
+      holder.updateMatrixWorld(true);
+      for (const h of hair) h.update(time, speed, model);
+    },
+  };
 }
 
 function fromGltf(gltf: GLTF): Zebra {
   const model = gltf.scene;
-  prepareMaterials(model);
+  const hair = prepareMaterials(model);
 
   const clip = AnimationClip.findByName(gltf.animations, GALLOP_CLIP) ?? gltf.animations[0];
   if (!clip) {
     console.warn('zebra.glb saknar animationer; zebran står still.');
-    return { object: createHolder(model), speed: 0, isPlaceholder: false, update: () => {} };
+    return makeZebra(model, 0, false, hair, () => {});
   }
   if (clip.name !== GALLOP_CLIP) console.warn(`Klippet "${GALLOP_CLIP}" saknas, använder "${clip.name}".`);
 
@@ -65,12 +89,7 @@ function fromGltf(gltf: GLTF): Zebra {
 
   const stride = findStride(gltf, clip);
   const speed = clip.duration > 0 ? stride / clip.duration : 0;
-  return {
-    object: createHolder(model),
-    speed,
-    isPlaceholder: false,
-    update: (dt) => mixer.update(dt),
-  };
+  return makeZebra(model, speed, false, hair, (dt) => mixer.update(dt));
 }
 
 /** Letar efter gallop_stride_m i klippets, scenens eller någon nods extras. */
@@ -89,20 +108,38 @@ function findStride(gltf: GLTF, clip: AnimationClip): number {
   return stride ?? DEFAULT_STRIDE_M;
 }
 
-/** Byter material efter namn och slår på skuggor. */
-function prepareMaterials(root: Object3D): void {
+const HAIR_OPTIONS = { Hair_Mane: MANE_OPTIONS, Hair_Tail: TAIL_OPTIONS } as const;
+
+/**
+ * Byter material efter namn: Hair_Mane/Hair_Tail får hårshadern, resten
+ * (Zebra_Body m.fl.) blir toon med kvar textur. Returnerar hårkopplingarna.
+ */
+function prepareMaterials(root: Object3D): HairBinding[] {
+  const hair: HairBinding[] = [];
   root.traverse((o) => {
     if (!(o instanceof Mesh)) return;
+    let hasHair = false;
     const convert = (m: Material): Material => {
-      const toon = toToonMaterial(m);
+      const opts = HAIR_OPTIONS[m.name as keyof typeof HAIR_OPTIONS];
+      let result: Material;
+      if (opts) {
+        const { material, uniforms } = createHairMaterial(m, opts);
+        hair.push(new HairBinding(o, uniforms));
+        hasHair = true;
+        result = material;
+      } else {
+        result = toToonMaterial(m);
+      }
       m.dispose();
-      return toon;
+      return result;
     };
     o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
-    o.castShadow = true;
+    // Hårkort skulle kasta skugga som hela rektanglar (skuggpasset vet inget om stråna).
+    o.castShadow = !hasHair;
     // Skinnade meshar har ofta fel omslutningssfär; det är bara en zebra.
     o.frustumCulled = false;
   });
+  return hair;
 }
 
 /** Lådzebra som studsar i galopptakt, med samma materialnamn som den riktiga. */
@@ -163,26 +200,21 @@ function createPlaceholder(): Zebra {
     legs.push(leg);
   }
 
-  prepareMaterials(model);
+  const hair = prepareMaterials(model);
 
   let t = 0;
-  return {
-    object: createHolder(model),
-    speed: DEFAULT_STRIDE_M / PLACEHOLDER_CYCLE_S,
-    isPlaceholder: true,
-    update(dt) {
-      t = (t + dt / PLACEHOLDER_CYCLE_S) % 1;
-      const a = t * Math.PI * 2;
-      body.position.y = 1.0 + Math.abs(Math.sin(a)) * 0.12;
-      body.rotation.x = Math.sin(a) * 0.08;
-      neck.rotation.x = 0.6 + Math.sin(a + 0.6) * 0.1;
-      // Fram- och bakbenpar i motfas, lite förskjutna inom paren.
-      legs[0]!.rotation.x = Math.sin(a) * 0.6;
-      legs[1]!.rotation.x = Math.sin(a + 0.4) * 0.6;
-      legs[2]!.rotation.x = Math.sin(a + Math.PI) * 0.6;
-      legs[3]!.rotation.x = Math.sin(a + Math.PI + 0.4) * 0.6;
-    },
-  };
+  return makeZebra(model, DEFAULT_STRIDE_M / PLACEHOLDER_CYCLE_S, true, hair, (dt) => {
+    t = (t + dt / PLACEHOLDER_CYCLE_S) % 1;
+    const a = t * Math.PI * 2;
+    body.position.y = 1.0 + Math.abs(Math.sin(a)) * 0.12;
+    body.rotation.x = Math.sin(a) * 0.08;
+    neck.rotation.x = 0.6 + Math.sin(a + 0.6) * 0.1;
+    // Fram- och bakbenpar i motfas, lite förskjutna inom paren.
+    legs[0]!.rotation.x = Math.sin(a) * 0.6;
+    legs[1]!.rotation.x = Math.sin(a + 0.4) * 0.6;
+    legs[2]!.rotation.x = Math.sin(a + Math.PI) * 0.6;
+    legs[3]!.rotation.x = Math.sin(a + Math.PI + 0.4) * 0.6;
+  });
 }
 
 type Dir = readonly [number, number, number];
