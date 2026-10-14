@@ -5,6 +5,8 @@ import { CameraRig } from './render/cameraRig.ts';
 import { createRenderer, resizeView } from './render/renderer.ts';
 import { createSavanna } from './render/savanna.ts';
 import { loadZebra } from './render/zebra.ts';
+import { FpsMeter } from './platform/fpsMeter.ts';
+import { enterFullscreenLandscape, exitFullscreen, isFullscreen, onFullscreenChange } from './platform/fullscreen.ts';
 import { watchViewport } from './platform/viewport.ts';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
@@ -13,6 +15,20 @@ const scene = createSavanna(DEFAULT_CIRCLE.radius);
 const rig = new CameraRig(canvas, new Vector3(0, 0.8, 0));
 
 watchViewport((w, h) => resizeView(renderer, rig.camera, w, h));
+
+const fullscreenButton = document.querySelector<HTMLButtonElement>('#btn-fullscreen')!;
+fullscreenButton.addEventListener('click', () => {
+  void (isFullscreen() ? exitFullscreen() : enterFullscreenLandscape());
+});
+onFullscreenChange((on) => fullscreenButton.setAttribute('aria-pressed', String(on)));
+
+const freeCamButton = document.querySelector<HTMLButtonElement>('#btn-freecam')!;
+freeCamButton.addEventListener('click', () => {
+  rig.setFree(!rig.isFree);
+  freeCamButton.setAttribute('aria-pressed', String(rig.isFree));
+});
+
+const fps = import.meta.env.DEV ? new FpsMeter(document.querySelector<HTMLElement>('#fps')!) : null;
 
 const zebra = await loadZebra(`${import.meta.env.BASE_URL}models/zebra.glb`);
 scene.add(zebra.object);
@@ -44,4 +60,5 @@ renderer.setAnimationLoop((time) => {
   lastTime = time;
   step(dt);
   renderer.render(scene, rig.camera);
+  fps?.frame(time);
 });

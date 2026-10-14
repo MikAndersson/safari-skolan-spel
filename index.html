@@ -8,6 +8,15 @@
   </head>
   <body>
     <canvas id="scene"></canvas>
+    <div id="hud">
+      <button id="btn-fullscreen" type="button" aria-label="Helskärm">
+        <span class="icon" aria-hidden="true">⛶</span><span class="label">Helskärm</span>
+      </button>
+      <button id="btn-freecam" type="button" aria-pressed="false" aria-label="Fri kamera">
+        <span class="icon" aria-hidden="true">🎥</span><span class="label">Fri kamera</span>
+      </button>
+    </div>
+    <div id="fps" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
