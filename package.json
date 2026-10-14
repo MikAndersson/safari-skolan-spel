@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check": "tsc --noEmit && vitest run --passWithNoTests"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",
